@@ -1,0 +1,10 @@
+{
+  "xsappname": "AI-srv",
+  "tenant-mode": "dedicated",
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.Display",
+      "description": "Display data"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+	"ACCESS": {
+		"application_user": {
+			"schema_privileges": [
+				{
+					"schema": "DBADMIN",
+					"privileges": [
+						"EXECUTE",
+						"SELECT",
+						"UPDATE"
+					]
+				}
+			]
+		},
+		"object_owner": {
+			"schema_privileges": [
+				{
+					"schema": "DBADMIN",
+					"privileges": [
+						"EXECUTE",
+						"SELECT",
+						"UPDATE"
+					]
+				}
+			]
+		}
+	}
+}
