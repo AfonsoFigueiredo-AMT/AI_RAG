@@ -1,0 +1,45 @@
+{
+  "name": "AI",
+  "version": "1.0.0",
+  "description": "A simple CAP project.",
+  "repository": "<Add your repository here>",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@cap-js/hana": "^2",
+    "@langchain/core": "^0.3.76",
+    "@langchain/openai": "^0.6.12",
+    "@sap/cds": "^9",
+    "@sap/hdi-deploy": "^5.5.0",
+    "@sap/xssec": "^4.9.1",
+    "express": "^4",
+    "hdb": "^0.19.12",
+    "langchain": "^0.3.34",
+    "openai": "^5.19.1",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": "22.16.0",
+    "npm": "8.0.0"
+  },
+  "devDependencies": {
+    "@cap-js/cds-types": "^0.13.0",
+    "@cap-js/sqlite": "^2",
+    "@sap/cds-dk": ">=8"
+  },
+  "scripts": {
+    "start": "cds-serve"
+  },
+  "cds": {
+    "requires": {
+      "auth": {
+        "kind": "basic",
+        "users": {
+          "user": {
+            "password": "123"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "ADDRESSSERVICE_ADDRESSES": {
+    "target": {
+      "object": "I_ADDRESS_2",
+      "schema": "DBADMIN"
+    }
+  }
+}

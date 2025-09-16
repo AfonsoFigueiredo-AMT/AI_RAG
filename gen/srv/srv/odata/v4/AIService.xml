@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">
+    <edmx:Include Alias="Common" Namespace="com.sap.vocabularies.Common.v1"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Alias="Core" Namespace="Org.OData.Core.V1"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="AIService" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <Annotation Term="Core.Links">
+        <Collection>
+          <Record>
+            <PropertyValue Property="rel" String="author"/>
+            <PropertyValue Property="href" String="https://cap.cloud.sap"/>
+          </Record>
+        </Collection>
+      </Annotation>
+      <EntityContainer Name="EntityContainer">
+        <ActionImport Name="queryLLM" Action="AIService.queryLLM"/>
+        <ActionImport Name="findClosest" Action="AIService.findClosest"/>
+      </EntityContainer>
+      <ComplexType Name="return_AIService_queryLLM">
+        <Property Name="answer" Type="Edm.String"/>
+        <Property Name="confidence" Type="Edm.Double"/>
+        <Property Name="relevantInvoices" Type="Collection(AIService.return_AIService_queryLLM_relevantInvoices)" Nullable="true"/>
+      </ComplexType>
+      <ComplexType Name="return_AIService_queryLLM_relevantInvoices">
+        <Property Name="invoiceId" Type="Edm.String"/>
+        <Property Name="relevance" Type="Edm.Double"/>
+      </ComplexType>
+      <Action Name="queryLLM" IsBound="false">
+        <Parameter Name="query" Type="Edm.String"/>
+        <Parameter Name="k" Type="Edm.Int32"/>
+        <ReturnType Type="AIService.return_AIService_queryLLM"/>
+      </Action>
+      <Action Name="findClosest" IsBound="false">
+        <Parameter Name="prompt" Type="Edm.String"/>
+      </Action>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

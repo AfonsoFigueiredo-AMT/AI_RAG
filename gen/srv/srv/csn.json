@@ -1,0 +1,97 @@
+{
+  "definitions": {
+    "AIService": {
+      "@source": "srv/service.cds",
+      "kind": "service"
+    },
+    "AIService.queryLLM": {
+      "kind": "action",
+      "params": {
+        "query": {
+          "type": "cds.String"
+        },
+        "k": {
+          "type": "cds.Integer"
+        }
+      },
+      "returns": {
+        "elements": {
+          "answer": {
+            "type": "cds.String"
+          },
+          "confidence": {
+            "type": "cds.Double"
+          },
+          "relevantInvoices": {
+            "items": {
+              "elements": {
+                "invoiceId": {
+                  "type": "cds.String"
+                },
+                "relevance": {
+                  "type": "cds.Double"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "AIService.findClosest": {
+      "kind": "action",
+      "params": {
+        "prompt": {
+          "type": "cds.String"
+        }
+      }
+    },
+    "cds.outbox.Messages": {
+      "kind": "entity",
+      "elements": {
+        "ID": {
+          "key": true,
+          "type": "cds.UUID"
+        },
+        "timestamp": {
+          "type": "cds.Timestamp"
+        },
+        "target": {
+          "type": "cds.String"
+        },
+        "msg": {
+          "type": "cds.LargeString"
+        },
+        "attempts": {
+          "type": "cds.Integer",
+          "default": {
+            "val": 0
+          }
+        },
+        "partition": {
+          "type": "cds.Integer",
+          "default": {
+            "val": 0
+          }
+        },
+        "lastError": {
+          "type": "cds.LargeString"
+        },
+        "lastAttemptTimestamp": {
+          "@cds.on.update": {
+            "=": "$now"
+          },
+          "type": "cds.Timestamp"
+        },
+        "status": {
+          "type": "cds.String",
+          "length": 23
+        }
+      }
+    }
+  },
+  "meta": {
+    "creator": "CDS Compiler v6.3.0",
+    "flavor": "inferred"
+  },
+  "$version": "2.0"
+}
