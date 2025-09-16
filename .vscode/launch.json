@@ -2,6 +2,17 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Attach to CF on port 9229",
+      "port": 9229,
+      "request": "attach",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node",
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "/home/vcap/app"
+    },
+    {
       "name": "cds serve",
       "request": "launch",
       "type": "node",

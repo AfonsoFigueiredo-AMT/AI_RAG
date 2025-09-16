@@ -1,9 +1,14 @@
-const cds = require('@sap/cds');
-const { OpenAI } = require('openai'); // Certifique-se que o SDK está instalado
+import cds from '@sap/cds';
+import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { StructuredOutputParser } from '@langchain/core/output_parsers';
+import { OutputFixingParser } from 'langchain/output_parsers';
+import { z } from 'zod';
+import { OpenAI } from 'openai';
 
-class AddressService extends cds.ApplicationService {
+class AIService extends cds.ApplicationService {
   async init() {
-    // Carrega API Key do OpenAI via VCAP_SERVICES
+    // Initialize OpenAI
     let apiKey;
     if (process.env.VCAP_SERVICES) {
       const vcap = JSON.parse(process.env.VCAP_SERVICES);
@@ -18,24 +23,11 @@ class AddressService extends cds.ApplicationService {
 
     this.openai = new OpenAI({ apiKey });
 
-    // Eventos
-    this.on('READ', 'Addresses', this.readAddress);
+    this.db = await cds.connect.to('db');
     this.on('findClosest', this.onFindClosest);
+    this.on('queryLLM', this.queryLLM);
 
     await super.init();
-  }
-
-  // Handler READ via sinônimo
-  async readAddress(req) {
-    try {
-      const db = await cds.connect.to('db');
-      const data = await db.run(`SELECT * FROM "ADDRESSSERVICE_ADDRESSES"`);
-      console.log('Fetched Addresses data:', JSON.stringify(data, null, 2));
-      return data;
-    } catch (err) {
-      console.error('Error in readAddress:', err);
-      return req.reject(500, `Failed to read addresses: ${err.message}`);
-    }
   }
 
   async onFindClosest(req) {
@@ -43,75 +35,144 @@ class AddressService extends cds.ApplicationService {
     if (!prompt) return req.reject(400, 'prompt is required');
 
     try {
-      // Cria embedding do prompt
-      const embResp = await this.openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: prompt,
-        encoding_format: "float"
-      });
+      // Generate embedding
+      const embedding = await getEmbedding(prompt);
 
-      let userEmbedding = embResp.data[0].embedding.slice(0, 768);
+      // Slice to 768 dimensions and normalize
+      let userEmbedding = embedding.slice(0, 768);
       userEmbedding = this.normalizeL2(userEmbedding);
 
-      // Busca todas as addresses
-      const db = await cds.connect.to('db');
-      const addrs = await db.run(`SELECT * FROM "ADDRESSSERVICE_ADDRESSES"`);
+      // Convert embedding to JSON string for REAL_VECTOR
+      const userEmbeddingStr = JSON.stringify(userEmbedding);
 
-      // Calcula similaridade
-      let best = null;
-      let bestScore = -Infinity;
+      // Query using COSINE_SIMILARITY
+      const query = `
+        SELECT
+          "AddressID",
+          "AddresseeFullName",
+          COSINE_SIMILARITY("Embedding", TO_REAL_VECTOR(?)) as similarity
+        FROM "922E760E5EEB45D786D4B63D18D570D1"."HDI_ADDRESS_2"
+        WHERE "Embedding" IS NOT NULL
+        ORDER BY similarity DESC
+        LIMIT 1
+      `;
 
-      for (const a of addrs) {
-        const dbEmb = this.parseEmbedding(a.EMBEDDING);
-        if (!dbEmb || dbEmb.length !== userEmbedding.length) continue;
+      // Execute the query
+      const result = await this.db.run(query, [userEmbeddingStr]);
 
-        const similarity = this.cosineSim(userEmbedding, dbEmb);
-        if (similarity > bestScore) {
-          bestScore = similarity;
-          best = a;
-        }
+      if (!result || result.length === 0) {
+        return req.reject(404, 'No matching address found');
       }
 
-      return best;
-
+      return result[0];
     } catch (err) {
       console.error('Error in findClosest handler:', err);
       return req.reject(500, `Failed to find closest address: ${err.message}`);
     }
   }
 
-  // Normaliza vetor L2
+  async runVectorSearch(query) {
+    const queryVector = await getEmbedding(query);
+    const queryVectorStr = JSON.stringify(queryVector.slice(0, 768));
+    const sql = `
+      SELECT TOP 5
+        "SupplierInvoiceIDByInvcgParty",
+        "InvoiceGrossAmount",
+        "SupplierInvoice",
+        COSINE_SIMILARITY("Embedding", TO_REAL_VECTOR(?)) as "COSINE_SIMILARITY"
+      FROM "922E760E5EEB45D786D4B63D18D570D1"."HDI_SUPPLIERINVOICE"
+      WHERE "Embedding" IS NOT NULL
+      ORDER BY COSINE_SIMILARITY("Embedding", TO_REAL_VECTOR(?)) DESC
+    `;
+
+    const result = await this.db.run(sql, [queryVectorStr, queryVectorStr]);
+    return result;
+  }
+
+  async queryLLM(req) {
+    const query = req;
+    if (!query) return req.reject(400, 'query is required');
+
+    try {
+      // Get context from vector search
+      const contextRecords = await this.runVectorSearch(query);
+      const context = contextRecords
+        .map(record => `Invoice ID: ${record.SupplierInvoiceIDByInvcgParty}, Amount: ${record.InvoiceGrossAmount}, Details: ${record.SupplierInvoice}`)
+        .join('\n');
+
+      // Define the prompt template
+      const promptTemplate = await ChatPromptTemplate.fromMessages([
+        [
+          'system',
+          `You are an accountant. Use the following context to answer the question. Provide a structured JSON response.
+          Context:
+          {context}
+          Question:
+          {query}
+          {formatInstructions}`,
+        ],
+      ]);
+
+      // Define the output schema
+      const outputSchema = z.object({
+        answer: z.string().describe('The answer to the query based on the context.'),
+        confidence: z.number().min(0).max(1).describe('Confidence score for the answer (0 to 1).'),
+        relevantInvoices: z
+          .array(
+            z.object({
+              invoiceId: z.string().describe('The SupplierInvoiceIDByInvcgParty of the relevant invoice.'),
+              relevance: z.number().min(0).max(1).describe('Relevance score of the invoice to the query.'),
+            })
+          )
+          .describe('List of relevant invoices from the context.'),
+      });
+
+      // Set up the parser
+      const parser = StructuredOutputParser.fromZodSchema(outputSchema);
+      const formatInstructions = parser.getFormatInstructions();
+      const parserWithFix = OutputFixingParser.fromLLM(getChatModel(), parser);
+
+      // Create the LLM chain
+      const llmChain = promptTemplate.pipe(getChatModel()).pipe(parserWithFix);
+
+      // Invoke the LLM
+      const response = await llmChain.invoke({
+        context,
+        query,
+        formatInstructions,
+      });
+
+      return response;
+    } catch (err) {
+      console.error('Error in queryLLM:', err);
+      return req.reject(500, `Failed to process query: ${err.message}`);
+    }
+  }
+
+  // Normalize vector L2
   normalizeL2(vec) {
     const norm = Math.sqrt(vec.reduce((acc, val) => acc + val * val, 0));
     return norm === 0 ? vec : vec.map(v => v / norm);
   }
 
-  // Converte string de embedding em array de números
-  parseEmbedding(raw) {
-    if (!raw) return null;
-    let str = raw.toString().trim();
-    if (str.startsWith('"') && str.endsWith('"')) str = str.slice(1, -1);
-
-    try {
-      const arr = JSON.parse(str);
-      if (Array.isArray(arr)) return arr;
-    } catch {
-      const matches = str.match(/-?\d+(\.\d+)?(e-?\d+)?/g);
-      if (matches) return matches.map(Number);
-    }
-    return null;
-  }
-
-  // Calcula similaridade cosseno
-  cosineSim(a, b) {
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      na += a[i] * a[i];
-      nb += b[i] * b[i];
-    }
-    return dot / (Math.sqrt(na) * Math.sqrt(nb));
-  }
 }
 
-module.exports = AddressService;
+const getChatModel = () => {
+  return new ChatOpenAI({
+    openAIApiKey: process.env.OPENAI_API_KEY,
+    modelName: "gpt-4o-mini",
+    temperature: 0.1,
+  });
+};
+
+const getEmbedding = async (prompt) => {
+  embResp = await this.openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: prompt,
+    encoding_format: 'float'
+  });
+
+  return embResp.data[0].embedding
+};
+
+export default AIService;
