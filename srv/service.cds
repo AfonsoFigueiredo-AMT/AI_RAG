@@ -1,9 +1,9 @@
 service AIService {
-  action queryLLM(query: String, k: Integer) returns {
+  action queryLLM(prompt: String) returns {
     answer: String;
     confidence: Double;
-    relevantInvoices: array of {
-      invoiceId: String;
+    relevantAddresses: array of {
+      addressId: String;
       relevance: Double;
     };
   };

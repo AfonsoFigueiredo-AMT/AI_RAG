@@ -1,9 +1,9 @@
 _schema-version: 3.3.0
-ID: AI
+ID: AI_RAG
 description: A simple CAP project.
 version: 1.0.0
 modules:
-- name: AI-srv
+- name: AI_RAG-srv
   type: nodejs
   path: gen/srv
   requires:
@@ -16,9 +16,11 @@ modules:
   parameters:
     buildpack: nodejs_buildpack
     instances: 1
+    memory: 512M  
+    disk-quota: 512M
   build-parameters:
     builder: npm-ci
-- name: AI-db-deployer
+- name: AI_RAG-db-deployer
   type: hdb
   path: gen/db
   requires:
@@ -32,6 +34,8 @@ modules:
       service: ~{the-service-name}
   parameters:
     buildpack: nodejs_buildpack
+    memory: 256M  
+    disk-quota: 256M 
 resources:
 - name: AI-db
   type: com.sap.xs.hdi-container

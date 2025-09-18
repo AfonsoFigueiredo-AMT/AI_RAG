@@ -23,15 +23,14 @@
       <ComplexType Name="return_AIService_queryLLM">
         <Property Name="answer" Type="Edm.String"/>
         <Property Name="confidence" Type="Edm.Double"/>
-        <Property Name="relevantInvoices" Type="Collection(AIService.return_AIService_queryLLM_relevantInvoices)" Nullable="true"/>
+        <Property Name="relevantAddresses" Type="Collection(AIService.return_AIService_queryLLM_relevantAddresses)" Nullable="true"/>
       </ComplexType>
-      <ComplexType Name="return_AIService_queryLLM_relevantInvoices">
-        <Property Name="invoiceId" Type="Edm.String"/>
+      <ComplexType Name="return_AIService_queryLLM_relevantAddresses">
+        <Property Name="addressId" Type="Edm.String"/>
         <Property Name="relevance" Type="Edm.Double"/>
       </ComplexType>
       <Action Name="queryLLM" IsBound="false">
-        <Parameter Name="query" Type="Edm.String"/>
-        <Parameter Name="k" Type="Edm.Int32"/>
+        <Parameter Name="prompt" Type="Edm.String"/>
         <ReturnType Type="AIService.return_AIService_queryLLM"/>
       </Action>
       <Action Name="findClosest" IsBound="false">

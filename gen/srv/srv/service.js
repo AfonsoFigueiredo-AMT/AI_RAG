@@ -23,6 +23,9 @@ class AIService extends cds.ApplicationService {
 
     this.openai = new OpenAI({ apiKey });
 
+    process.env.OPENAI_API_KEY = apiKey;
+    console.log('OpenAI API Key set successfully');
+
     this.db = await cds.connect.to('db');
     this.on('findClosest', this.onFindClosest);
     this.on('queryLLM', this.queryLLM);
@@ -72,20 +75,17 @@ class AIService extends cds.ApplicationService {
   }
 
   async runVectorSearch(query) {
-    const queryVector = await getEmbedding(query);
-    const queryVectorStr = JSON.stringify(queryVector.slice(0, 768));
     const sql = `
-      SELECT TOP 5
-        "SupplierInvoiceIDByInvcgParty",
-        "InvoiceGrossAmount",
-        "SupplierInvoice",
-        COSINE_SIMILARITY("Embedding", TO_REAL_VECTOR(?)) as "COSINE_SIMILARITY"
-      FROM "922E760E5EEB45D786D4B63D18D570D1"."HDI_SUPPLIERINVOICE"
-      WHERE "Embedding" IS NOT NULL
-      ORDER BY COSINE_SIMILARITY("Embedding", TO_REAL_VECTOR(?)) DESC
-    `;
+      SELECT TOP 10
+        COSINE_SIMILARITY("Embedding", VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715')) AS Similarity,
+        VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715') AS QueryEmbedding,
+        *
+      FROM "922E760E5EEB45D786D4B63D18D570D1"."HDI_ADDRESS_2"
+      ORDER BY COSINE_SIMILARITY(
+      VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715'), "Embedding") DESC;
+      `;
 
-    const result = await this.db.run(sql, [queryVectorStr, queryVectorStr]);
+    const result = await this.db.run(sql, [query, query, query]);
     return result;
   }
 
@@ -97,35 +97,60 @@ class AIService extends cds.ApplicationService {
       // Get context from vector search
       const contextRecords = await this.runVectorSearch(query);
       const context = contextRecords
-        .map(record => `Invoice ID: ${record.SupplierInvoiceIDByInvcgParty}, Amount: ${record.InvoiceGrossAmount}, Details: ${record.SupplierInvoice}`)
+        .map(record => {
+          // Get all column names from the record (including 'similarity' and table columns)
+          const columns = Object.keys(record);
+          // Format each column as "ColumnName: value"
+          const formattedFields = columns
+            .map(col => {
+              const value = record[col] !== null && record[col] !== undefined ? record[col] : 'N/A';
+              return `${col}: ${value}`;
+            })
+            .join(', ');
+          return `Address Record: {${formattedFields}}`;
+        })
         .join('\n');
 
       // Define the prompt template
-      const promptTemplate = await ChatPromptTemplate.fromMessages([
-        [
-          'system',
-          `You are an accountant. Use the following context to answer the question. Provide a structured JSON response.
-          Context:
-          {context}
-          Question:
-          {query}
-          {formatInstructions}`,
-        ],
-      ]);
+      const promptTemplate = ChatPromptTemplate.fromMessages([
+      [
+        'system',
+        `You are a Routing Expert and Travel Agent Specialist. Your job is to analyze the provided client addresses and generate the most efficient, quickest route to visit all specified clients in a logical order. 
 
-      // Define the output schema
-      const outputSchema = z.object({
-        answer: z.string().describe('The answer to the query based on the context.'),
-        confidence: z.number().min(0).max(1).describe('Confidence score for the answer (0 to 1).'),
-        relevantInvoices: z
-          .array(
-            z.object({
-              invoiceId: z.string().describe('The SupplierInvoiceIDByInvcgParty of the relevant invoice.'),
-              relevance: z.number().min(0).max(1).describe('Relevance score of the invoice to the query.'),
-            })
-          )
-          .describe('List of relevant invoices from the context.'),
-      });
+        Key Guidelines:
+        - Use ONLY the provided context (address records) to identify and select relevant client addresses. Ignore any external knowledge or assumptions about locations.
+        - Optimize the route for efficiency: Prioritize based on geographical proximity (e.g., group by city/region, then street order), estimated travel time (infer from address details like city, region, country), and logical flow (e.g., start from a central point if not specified, avoid backtracking).
+        - If the query specifies multiple clients (e.g., "route to clients X, Y, and Z"), map them to the most relevant addresses from the context based on names, IDs, or details. If exact matches aren't found, select the top semantically similar ones.
+        - Consider practical factors: Suggest modes of travel (e.g., driving, walking) based on urban vs. rural addresses; note potential delays (e.g., traffic in cities); ensure safety (e.g., avoid unsafe areas if inferable from data).
+        - Structure your response: 
+          - Start with a brief overview of the route (total estimated steps/distance if inferable).
+          - List the sequence of addresses with directions between them.
+          - End with tips for execution (e.g., "Use GPS for real-time updates").
+        - Provide a structured JSON response only.
+
+        Additional Information: Assume standard road networks; if addresses lack coordinates, use descriptive sequencing (e.g., "from City A to City B via main highway").
+
+        Context:
+        {context}
+        Question:
+        {query}
+        {formatInstructions}`,
+      ],
+    ]);
+
+    // Define the output schema (unchanged, as it fits routing: answer describes the route, relevantAddresses lists the sequence)
+    const outputSchema = z.object({
+      answer: z.string().describe('The detailed route description, including sequence, directions, and tips based on the context.'),
+      confidence: z.number().min(0).max(1).describe('Confidence score for the route accuracy (0 to 1, based on address match quality and optimization feasibility).'),
+      relevantAddresses: z
+        .array(
+          z.object({
+            addressId: z.string().describe('The AddressID of the relevant Address in the route sequence.'),
+            relevance: z.number().min(0).max(1).describe('Relevance score of the Address to the query and its position in the route.'),
+          })
+        )
+        .describe('Ordered list of relevant Addresses used in the route, with relevance reflecting match and sequencing fit.'),
+    });
 
       // Set up the parser
       const parser = StructuredOutputParser.fromZodSchema(outputSchema);

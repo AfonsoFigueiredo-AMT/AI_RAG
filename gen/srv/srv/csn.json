@@ -7,11 +7,8 @@
     "AIService.queryLLM": {
       "kind": "action",
       "params": {
-        "query": {
+        "prompt": {
           "type": "cds.String"
-        },
-        "k": {
-          "type": "cds.Integer"
         }
       },
       "returns": {
@@ -22,10 +19,10 @@
           "confidence": {
             "type": "cds.Double"
           },
-          "relevantInvoices": {
+          "relevantAddresses": {
             "items": {
               "elements": {
-                "invoiceId": {
+                "addressId": {
                   "type": "cds.String"
                 },
                 "relevance": {

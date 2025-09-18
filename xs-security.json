@@ -1,5 +1,5 @@
 {
-  "xsappname": "AI-srv",
+  "xsappname": "AI_RAG-srv",
   "tenant-mode": "dedicated",
   "scopes": [
     {
