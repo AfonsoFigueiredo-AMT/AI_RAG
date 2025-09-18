@@ -7,5 +7,5 @@ service AIService {
       relevance: Double;
     };
   };
-  action findClosest(prompt : String);
+  // action findClosest(prompt : String);
 }

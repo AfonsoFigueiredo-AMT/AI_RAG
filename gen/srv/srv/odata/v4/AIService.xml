@@ -18,7 +18,6 @@
       </Annotation>
       <EntityContainer Name="EntityContainer">
         <ActionImport Name="queryLLM" Action="AIService.queryLLM"/>
-        <ActionImport Name="findClosest" Action="AIService.findClosest"/>
       </EntityContainer>
       <ComplexType Name="return_AIService_queryLLM">
         <Property Name="answer" Type="Edm.String"/>
@@ -32,9 +31,6 @@
       <Action Name="queryLLM" IsBound="false">
         <Parameter Name="prompt" Type="Edm.String"/>
         <ReturnType Type="AIService.return_AIService_queryLLM"/>
-      </Action>
-      <Action Name="findClosest" IsBound="false">
-        <Parameter Name="prompt" Type="Edm.String"/>
       </Action>
     </Schema>
   </edmx:DataServices>

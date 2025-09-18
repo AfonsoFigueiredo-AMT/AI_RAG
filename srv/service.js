@@ -27,13 +27,13 @@ class AIService extends cds.ApplicationService {
     console.log('OpenAI API Key set successfully');
 
     this.db = await cds.connect.to('db');
-    this.on('findClosest', this.onFindClosest);
+    // this.on('findClosest', this.onFindClosest);
     this.on('queryLLM', this.queryLLM);
 
     await super.init();
   }
 
-  async onFindClosest(req) {
+  /* async onFindClosest(req) {
     const { prompt } = req.data;
     if (!prompt) return req.reject(400, 'prompt is required');
 
@@ -72,17 +72,17 @@ class AIService extends cds.ApplicationService {
       console.error('Error in findClosest handler:', err);
       return req.reject(500, `Failed to find closest address: ${err.message}`);
     }
-  }
+  } */
 
   async runVectorSearch(query) {
     const sql = `
       SELECT TOP 10
-        COSINE_SIMILARITY("Embedding", VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715')) AS Similarity,
+        COSINE_SIMILARITY("EMBEDDING", VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715')) AS Similarity,
         VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715') AS QueryEmbedding,
         *
-      FROM "922E760E5EEB45D786D4B63D18D570D1"."HDI_ADDRESS_2"
+      FROM "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS"
       ORDER BY COSINE_SIMILARITY(
-      VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715'), "Embedding") DESC;
+      VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715'),"EMBEDDING") DESC;
       `;
 
     const result = await this.db.run(sql, [query, query, query]);
@@ -145,7 +145,7 @@ class AIService extends cds.ApplicationService {
       relevantAddresses: z
         .array(
           z.object({
-            addressId: z.string().describe('The AddressID of the relevant Address in the route sequence.'),
+            addressId: z.string().describe('The ID of the relevant Address in the route sequence.'),
             relevance: z.number().min(0).max(1).describe('Relevance score of the Address to the query and its position in the route.'),
           })
         )

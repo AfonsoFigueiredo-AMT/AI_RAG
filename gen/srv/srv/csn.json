@@ -34,14 +34,6 @@
         }
       }
     },
-    "AIService.findClosest": {
-      "kind": "action",
-      "params": {
-        "prompt": {
-          "type": "cds.String"
-        }
-      }
-    },
     "cds.outbox.Messages": {
       "kind": "entity",
       "elements": {
