@@ -1,39 +1,35 @@
 import cds from '@sap/cds';
-import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
+import { ChatOpenAI } from '@langchain/openai';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { OutputFixingParser } from 'langchain/output_parsers';
 import { z } from 'zod';
 import { OpenAI } from 'openai';
+import fetch from 'node-fetch';
 
 class AIService extends cds.ApplicationService {
   async init() {
-    // Initialize OpenAI and Google Maps API keys
-    let apiKey, googleMapsApiKey;
+    // Initialize OpenAI
+    let apiKey;
     if (process.env.VCAP_SERVICES) {
       const vcap = JSON.parse(process.env.VCAP_SERVICES);
       if (vcap['user-provided']) {
         const openaiService = vcap['user-provided'].find(s => s.name === 'openai-service');
-        const mapsService = vcap['user-provided'].find(s => s.name === 'google-maps-service');
         if (openaiService?.credentials?.OPENAI_API_KEY) {
           apiKey = openaiService.credentials.OPENAI_API_KEY;
-        }
-        if (mapsService?.credentials?.GOOGLE_MAPS_API_KEY) {
-          googleMapsApiKey = mapsService.credentials.GOOGLE_MAPS_API_KEY;
         }
       }
     }
     if (!apiKey) throw new Error("OPENAI_API_KEY not found in VCAP_SERVICES");
-    if (!googleMapsApiKey) throw new Error("GOOGLE_MAPS_API_KEY not found in VCAP_SERVICES");
 
     this.openai = new OpenAI({ apiKey });
     process.env.OPENAI_API_KEY = apiKey;
-    this.googleMapsApiKey = googleMapsApiKey;
 
-    console.log('OpenAI and Google Maps API Keys set successfully');
+    console.log('OpenAI API Key set successfully');
 
     this.db = await cds.connect.to('db');
     this.on('queryLLM', this.queryLLM);
+    this.on('populateCoordinates', this.populateCoordinates);
 
     await super.init();
   }
@@ -53,8 +49,98 @@ class AIService extends cds.ApplicationService {
     return result;
   }
 
+  // Geocoding function using Nominatim (OpenStreetMap)
+  async geocodeAddress(address) {
+    const query = encodeURIComponent(address);
+    const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'MyCAPApp/1.0' } // Simplified User-Agent
+      });
+      const data = await response.json();
+      if (data.length > 0) {
+        return {
+          lat: parseFloat(data[0].lat),
+          lon: parseFloat(data[0].lon)
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error('Geocoding error for address', address, ':', err);
+      return null;
+    }
+  }
+
+  // Fetch route geometry from OSRM
+  async getRouteGeometry(coordinates) {
+    if (coordinates.length < 2) return null;
+    const coordsStr = coordinates.map(c => `${c.lon},${c.lat}`).join(';');
+    const url = `http://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.routes && data.routes.length > 0) {
+        return data.routes[0].geometry;
+      }
+      return null;
+    } catch (err) {
+      console.error('OSRM route error:', err);
+      return null;
+    }
+  }
+
+  // Endpoint to populate Latitude and Longitude
+  async populateCoordinates(req) {
+    try {
+      // Fetch all clients without coordinates, including PostalCode
+      const clients = await this.db.run(
+        'SELECT ID, Address, PostalCode, City, Country FROM "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS" WHERE Latitude IS NULL OR Longitude IS NULL'
+      );
+
+      if (clients.length === 0) {
+        return { message: 'All clients already have coordinates or no clients found.' };
+      }
+
+      // Process each client with a 1-second delay to respect Nominatim rate limits
+      const results = {
+        updated: [],
+        failed: []
+      };
+      for (const client of clients) {
+        const fullAddress = `${client.Address}, ${client.PostalCode} ${client.City}, ${client.Country}`;
+        console.log(`Geocoding: ${fullAddress}`);
+        const coords = await this.geocodeAddress(fullAddress);
+
+        if (coords) {
+          // Update the client record with coordinates
+          await this.db.run(
+            'UPDATE "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS" SET Latitude = ?, Longitude = ? WHERE ID = ?',
+            [coords.lat, coords.lon, client.ID]
+          );
+          results.updated.push({ id: client.ID, address: fullAddress, lat: coords.lat, lon: coords.lon });
+          console.log(`Updated ID ${client.ID} with lat: ${coords.lat}, lon: ${coords.lon}`);
+        } else {
+          results.failed.push({ id: client.ID, address: fullAddress });
+          console.warn(`Failed to geocode: ${fullAddress}`);
+        }
+
+        // Delay to respect Nominatim rate limit (1 second)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      return {
+        message: `Processed ${clients.length} clients.`,
+        updated: results.updated,
+        failed: results.failed
+      };
+    } catch (err) {
+      console.error('Error in populateCoordinates:', err);
+      return req.reject(500, `Failed to populate coordinates: ${err.message}`);
+    }
+  }
+
   async queryLLM(req) {
-    const query = req.data?.prompt || req; // Handle both direct string and { prompt: string }
+    const query = req.data?.prompt || req;
     if (!query) return req.reject(400, 'query is required');
 
     try {
@@ -129,25 +215,56 @@ class AIService extends cds.ApplicationService {
         formatInstructions,
       });
 
-      // Fetch addresses for relevantAddresses and generate Google Maps URL
+      // Fetch addresses for relevantAddresses, including PostalCode
       const addressIds = response.relevantAddresses.map(addr => addr.addressId);
       const addresses = await this.db.run(
-        `SELECT ID, Address, City, Country FROM "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS" WHERE ID IN (${addressIds.map(() => '?').join(',')})`,
+        `SELECT ID, CompanyName, Address, PostalCode, City, Country, Latitude, Longitude FROM "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS" WHERE ID IN (${addressIds.map(() => '?').join(',')})`,
         addressIds
       );
 
-      // Sort addresses to match the order in relevantAddresses
-      const orderedAddresses = response.relevantAddresses.map(relAddr => {
+      // Sort addresses to match the order in relevantAddresses and geocode if necessary
+      const orderedAddresses = await Promise.all(response.relevantAddresses.map(async relAddr => {
         const addr = addresses.find(a => a.ID.toString() === relAddr.addressId);
-        return addr ? `${addr.Address}, ${addr.City}, ${addr.Country}` : null;
-      }).filter(addr => addr !== null);
+        if (!addr) return null;
 
-      // Generate Google Maps URL
+        let lat = addr.Latitude;
+        let lon = addr.Longitude;
+        if (!lat || !lon) {
+          const fullAddress = `${addr.Address}, ${addr.PostalCode} ${addr.City}, ${addr.Country}`;
+          const coords = await this.geocodeAddress(fullAddress);
+          if (coords) {
+            // Update database with coordinates
+            await this.db.run(
+              'UPDATE "922E760E5EEB45D786D4B63D18D570D1"."CLIENTS" SET Latitude = ?, Longitude = ? WHERE ID = ?',
+              [coords.lat, coords.lon, addr.ID]
+            );
+            lat = coords.lat;
+            lon = coords.lon;
+          }
+        }
+
+        return {
+          id: addr.ID,
+          companyName: addr.CompanyName,
+          address: `${addr.Address}, ${addr.PostalCode} ${addr.City}, ${addr.Country}`,
+          lat,
+          lon
+        };
+      }));
+
+      // Filter out null entries and addresses without coordinates
+      const validAddresses = orderedAddresses.filter(addr => addr !== null && addr.lat && addr.lon);
+
+      // Get route geometry from OSRM
+      const coordinates = validAddresses.map(addr => ({ lat: addr.lat, lon: addr.lon }));
+      const routeGeometry = await this.getRouteGeometry(coordinates);
+
+      // Generate Google Maps URL as fallback
       let mapsUrl = '';
-      if (orderedAddresses.length > 0) {
-        const origin = encodeURIComponent(orderedAddresses[0]);
-        const destination = encodeURIComponent(orderedAddresses[orderedAddresses.length - 1]);
-        const waypoints = orderedAddresses.slice(1, -1).map(addr => encodeURIComponent(addr)).join('|');
+      if (validAddresses.length > 0) {
+        const origin = encodeURIComponent(validAddresses[0].address);
+        const destination = encodeURIComponent(validAddresses[validAddresses.length - 1].address);
+        const waypoints = validAddresses.slice(1, -1).map(addr => encodeURIComponent(addr.address)).join('|');
         mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
         if (waypoints) {
           mapsUrl += `&waypoints=${waypoints}`;
@@ -155,10 +272,19 @@ class AIService extends cds.ApplicationService {
         mapsUrl += '&travelmode=driving';
       }
 
-      // Add mapsUrl to the response
+      // Add map data to response
       response = {
         ...response,
-        mapsUrl: mapsUrl || 'No valid addresses found for mapping'
+        mapsUrl: mapsUrl || 'No valid addresses found for mapping',
+        leafletMapData: {
+          waypoints: validAddresses.map(addr => ({
+            id: addr.id,
+            companyName: addr.companyName,
+            address: addr.address,
+            coordinates: [addr.lat, addr.lon]
+          })),
+          routeGeometry: routeGeometry || null
+        }
       };
 
       return response;

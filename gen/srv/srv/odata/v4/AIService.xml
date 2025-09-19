@@ -18,19 +18,30 @@
       </Annotation>
       <EntityContainer Name="EntityContainer">
         <ActionImport Name="queryLLM" Action="AIService.queryLLM"/>
+        <ActionImport Name="populateCoordinates" Action="AIService.populateCoordinates"/>
       </EntityContainer>
-      <ComplexType Name="return_AIService_queryLLM">
-        <Property Name="answer" Type="Edm.String"/>
-        <Property Name="confidence" Type="Edm.Double"/>
-        <Property Name="relevantAddresses" Type="Collection(AIService.return_AIService_queryLLM_relevantAddresses)" Nullable="true"/>
+      <ComplexType Name="return_AIService_queryLLM"/>
+      <ComplexType Name="return_AIService_populateCoordinates">
+        <Property Name="message" Type="Edm.String"/>
+        <Property Name="updated" Type="Collection(AIService.return_AIService_populateCoordinates_updated)" Nullable="true"/>
+        <Property Name="failed" Type="Collection(AIService.return_AIService_populateCoordinates_failed)" Nullable="true"/>
       </ComplexType>
-      <ComplexType Name="return_AIService_queryLLM_relevantAddresses">
-        <Property Name="addressId" Type="Edm.String"/>
-        <Property Name="relevance" Type="Edm.Double"/>
+      <ComplexType Name="return_AIService_populateCoordinates_updated">
+        <Property Name="id" Type="Edm.Int32"/>
+        <Property Name="address" Type="Edm.String"/>
+        <Property Name="lat" Type="Edm.Double"/>
+        <Property Name="lon" Type="Edm.Double"/>
+      </ComplexType>
+      <ComplexType Name="return_AIService_populateCoordinates_failed">
+        <Property Name="id" Type="Edm.Int32"/>
+        <Property Name="address" Type="Edm.String"/>
       </ComplexType>
       <Action Name="queryLLM" IsBound="false">
         <Parameter Name="prompt" Type="Edm.String"/>
         <ReturnType Type="AIService.return_AIService_queryLLM"/>
+      </Action>
+      <Action Name="populateCoordinates" IsBound="false">
+        <ReturnType Type="AIService.return_AIService_populateCoordinates"/>
       </Action>
     </Schema>
   </edmx:DataServices>

@@ -15,6 +15,9 @@
     "express": "^4",
     "hdb": "^0.19.12",
     "langchain": "^0.3.34",
+    "leaflet": "^1.9.4",
+    "leaflet-routing-machine": "^3.2.12",
+    "node-fetch": "^3.3.2",
     "openai": "^5.19.1",
     "zod": "^3.25.76"
   },

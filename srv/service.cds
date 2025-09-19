@@ -1,11 +1,16 @@
 service AIService {
-  action queryLLM(prompt: String) returns {
-    answer: String;
-    confidence: Double;
-    relevantAddresses: array of {
-      addressId: String;
-      relevance: Double;
+  action queryLLM(prompt: String) returns {};
+  action populateCoordinates() returns {
+    message: String;
+    updated: array of {
+      id: Integer;
+      address: String;
+      lat: Double;
+      lon: Double;
+    };
+    failed: array of {
+      id: Integer;
+      address: String;
     };
   };
-  // action findClosest(prompt : String);
 }

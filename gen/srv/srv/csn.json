@@ -12,21 +12,42 @@
         }
       },
       "returns": {
+        "elements": {}
+      }
+    },
+    "AIService.populateCoordinates": {
+      "kind": "action",
+      "returns": {
         "elements": {
-          "answer": {
+          "message": {
             "type": "cds.String"
           },
-          "confidence": {
-            "type": "cds.Double"
-          },
-          "relevantAddresses": {
+          "updated": {
             "items": {
               "elements": {
-                "addressId": {
+                "id": {
+                  "type": "cds.Integer"
+                },
+                "address": {
                   "type": "cds.String"
                 },
-                "relevance": {
+                "lat": {
                   "type": "cds.Double"
+                },
+                "lon": {
+                  "type": "cds.Double"
+                }
+              }
+            }
+          },
+          "failed": {
+            "items": {
+              "elements": {
+                "id": {
+                  "type": "cds.Integer"
+                },
+                "address": {
+                  "type": "cds.String"
                 }
               }
             }
